@@ -2594,6 +2594,7 @@ var BTSOverlay = (function(){
       });
     }catch(e){}
     map.on('moveend zoomend',renderViewport);
+    loadSavedJs();   // khôi phục file .js đã thêm lần trước (mở lại vẫn còn)
     renderSites(); renderViewport(); updateStatus();
     addMapControl();
   }
@@ -2865,9 +2866,10 @@ var BTSOverlay = (function(){
   }
   function clearSaved(){
     try{ localStorage.removeItem(STORE_KEY); }catch(e){}
+    try{ localStorage.removeItem(ADDED_JS_KEY); }catch(e){}
     datasets=datasets.filter(function(d){return d.fixed||d.bundled;});
     activeFilter=null; hullCache=null; renderSites(); renderViewport(); updateStatus();
-    alert('🗑️ Đã xoá các lớp lưu trong trình duyệt. (Lớp MobiFone gốc và lớp nhúng .js vẫn còn.)');
+    alert('🗑️ Đã xoá lớp import và danh sách file .js đã thêm.\n(Phiên này vẫn hiện; lần mở sau sẽ không tự nạp lại các file .js đã thêm.)');
   }
   // Xuất lớp import thành file .js đặt tên theo nhà mạng (vinaphone_bts.js…)
   function dl(fn,txt,mime){
@@ -2926,19 +2928,36 @@ var BTSOverlay = (function(){
   }
 
   function totalBts(){ var n=0; datasets.forEach(function(d){n+=d.bts.length;}); return n; }
-  // Thêm file .js (bản đồ tỉnh mới) lúc đang chạy: tự gộp theo nhà mạng
+  var ADDED_JS_KEY='addedJsFilesV1';
+  function getSavedJs(){ try{ return JSON.parse(localStorage.getItem(ADDED_JS_KEY)||'[]'); }catch(e){ return []; } }
+  function saveAddedJs(name,text){
+    var list=getSavedJs();
+    // thay nếu trùng tên (tránh phình to khi add lại cùng file)
+    list=list.filter(function(x){return x.name!==name;});
+    list.push({name:name,text:text});
+    try{ localStorage.setItem(ADDED_JS_KEY, JSON.stringify(list)); return true; }
+    catch(e){ alert('⚠️ Bộ nhớ trình duyệt đã đầy — file vẫn hiện lần này nhưng có thể không lưu được để lần sau. Nên đặt file .js trực tiếp trong thư mục web/app.'); return false; }
+  }
+  // Khôi phục các file .js đã thêm trước đó (gọi khi khởi động)
+  function loadSavedJs(){
+    getSavedJs().forEach(function(it){
+      try{ var s=document.createElement('script'); s.text=it.text; document.body.appendChild(s); }catch(e){}
+    });
+    reload();
+  }
+  // Thêm file .js (bản đồ tỉnh mới) lúc đang chạy: tự gộp theo nhà mạng + lưu để mở lại vẫn còn
   function addJsFiles(files){
     if(!files||!files.length) return;
-    var arr=Array.prototype.slice.call(files), i=0, before=totalBts();
+    var arr=Array.prototype.slice.call(files), i=0, before=totalBts(), savedN=0;
     (function next(){
       if(i>=arr.length){
         renderSites(); renderViewport(); updateStatus(); hullCache=null;
-        alert('✅ Đã thêm '+arr.length+' file .js. Tổng BTS tăng '+(totalBts()-before)+' (đã gộp theo nhà mạng).');
+        alert('✅ Đã thêm '+arr.length+' file .js (đã lưu '+savedN+' file vào máy để mở lại vẫn còn).\nTổng BTS tăng '+(totalBts()-before)+', gộp theo nhà mạng.');
         return;
       }
       var f=arr[i++], r=new FileReader();
       r.onload=function(){
-        try{ var s=document.createElement('script'); s.text=r.result; document.body.appendChild(s); }
+        try{ var s=document.createElement('script'); s.text=r.result; document.body.appendChild(s); if(saveAddedJs(f.name, r.result)) savedN++; }
         catch(e){ alert('Lỗi nạp '+f.name+': '+e.message); }
         reload(); next();
       };
